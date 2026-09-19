@@ -63,10 +63,25 @@ export interface CandidateInvitation {
   candidateName: string;
   candidateEmail: string;
   inviteToken: string;
-  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT';
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT' | 'REVOKED';
+  participantId?: string;
   joinedAt?: string;
+  revokedAt?: string;
   createdAt: string;
+  inviteLink?: string;
 }
+
+export const INVITATION_STATUS_CONFIG: Record<CandidateInvitation['status'], { label: string; color: string }> = {
+  PENDING: { label: '待接受', color: '#ff9800' },
+  ACCEPTED: { label: '已接受', color: '#4caf50' },
+  DECLINED: { label: '已拒绝', color: '#f44336' },
+  JOINED: { label: '已加入', color: '#2196f3' },
+  LEFT: { label: '已离开', color: '#9e9e9e' },
+  REVOKED: { label: '已撤销', color: '#9e9e9e' },
+};
+
+export const getInvitationStatusConfig = (status: string) =>
+  INVITATION_STATUS_CONFIG[status as CandidateInvitation['status']] || { label: status, color: '#9e9e9e' };
 
 export interface ParticipantStatus {
   id: string;

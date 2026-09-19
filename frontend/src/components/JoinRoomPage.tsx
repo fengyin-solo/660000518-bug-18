@@ -5,6 +5,25 @@ import { getRoomByCode, getRoomById, joinRoom } from '../services/interviewRoomS
 import { useInterviewStore } from '../store/interview';
 import type { InterviewRoom, User } from '../types';
 
+type InvitationState = {
+  token: string;
+  status: string;
+  candidateName: string;
+  candidateEmail: string;
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: '4px',
+  border: '1px solid #444',
+  background: '#2a2a2a',
+  color: '#fff',
+  fontSize: '14px',
+  boxSizing: 'border-box',
+  outline: 'none',
+};
+
 export const JoinRoomPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -13,35 +32,54 @@ export const JoinRoomPage: React.FC = () => {
   const [candidateName, setCandidateName] = useState('');
   const [candidateEmail, setCandidateEmail] = useState('');
   const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [tokenFromUrl, setTokenFromUrl] = useState('');
+  const [invitation, setInvitation] = useState<InvitationState | null>(null);
   const [roomInfo, setRoomInfo] = useState<InterviewRoom | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
   const [error, setError] = useState('');
+  const [tokenError, setTokenError] = useState(false);
 
   useEffect(() => {
     const token = searchParams.get('token');
     const code = searchParams.get('code');
 
     if (token) {
-      setTokenFromUrl(token);
       fetchInvitationByToken(token);
     } else if (code) {
-      setRoomCodeInput(code);
-      fetchRoomByCode(code);
+      setRoomCodeInput(code.toUpperCase());
+      fetchRoomByCode(code.toUpperCase());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const fetchInvitationByToken = async (token: string) => {
     setInitialLoading(true);
     setError('');
+    setTokenError(false);
     try {
-      const invitation = await getInvitationByToken(token);
-      setCandidateName(invitation.candidateName || '');
-      setCandidateEmail(invitation.candidateEmail || '');
-      const room = await getRoomById(invitation.roomId);
+      const inv = await getInvitationByToken(token);
+      setCandidateName(inv.candidateName || '');
+      setCandidateEmail(inv.candidateEmail || '');
+      setInvitation({
+        token,
+        status: inv.status,
+        candidateName: inv.candidateName || '',
+        candidateEmail: inv.candidateEmail || '',
+      });
+      const room = await getRoomById(inv.roomId);
       setRoomInfo(room);
+
+      if (inv.status === 'REVOKED') {
+        setTokenError(true);
+        setError('该邀请已被撤销，请联系面试官重新获取邀请链接');
+      } else if (room.status === 'COMPLETED' || room.status === 'CANCELLED') {
+        setTokenError(true);
+        setError(room.status === 'CANCELLED' ? '面试已取消，无法加入' : '面试已结束，无法加入');
+      }
     } catch (err) {
+      setTokenError(true);
+      setRoomInfo(null);
+      setInvitation(null);
       setError(err instanceof Error ? err.message : '获取邀请信息失败');
     } finally {
       setInitialLoading(false);
@@ -50,16 +88,16 @@ export const JoinRoomPage: React.FC = () => {
 
   const fetchRoomByCode = async (code: string) => {
     if (code.length !== 6) return;
-    setInitialLoading(true);
     setError('');
     try {
       const room = await getRoomByCode(code);
       setRoomInfo(room);
+      if (room.status === 'COMPLETED' || room.status === 'CANCELLED') {
+        setError(room.status === 'CANCELLED' ? '面试已取消，无法加入' : '面试已结束，无法加入');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '房间不存在或已关闭');
       setRoomInfo(null);
-    } finally {
-      setInitialLoading(false);
     }
   };
 
@@ -72,6 +110,9 @@ export const JoinRoomPage: React.FC = () => {
       setRoomInfo(null);
     }
   };
+
+  const roomUnavailable = !!roomInfo && (roomInfo.status === 'COMPLETED' || roomInfo.status === 'CANCELLED');
+  const canSubmit = !!roomInfo && !roomUnavailable && !tokenError;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,10 +130,18 @@ export const JoinRoomPage: React.FC = () => {
       setError('请先输入有效的房间码或通过邀请链接进入');
       return;
     }
+    if (roomUnavailable) {
+      setError(roomInfo.status === 'CANCELLED' ? '面试已取消，无法加入' : '面试已结束，无法加入');
+      return;
+    }
+    if (invitation && invitation.status === 'REVOKED') {
+      setError('该邀请已被撤销，请联系面试官重新获取邀请链接');
+      return;
+    }
 
     setLoading(true);
     try {
-      const inviteToken = tokenFromUrl || '';
+      const inviteToken = invitation?.token || '';
       const result = await joinRoom(roomInfo.id, {
         candidateName: candidateName.trim(),
         inviteToken,
@@ -110,6 +159,7 @@ export const JoinRoomPage: React.FC = () => {
       setCurrentRoom(result.room);
       navigate(`/room/${result.room.id}/candidate`);
     } catch (err) {
+      // 加入失败时保留已填信息，可直接重试
       setError(err instanceof Error ? err.message : '加入房间失败');
     } finally {
       setLoading(false);
@@ -125,7 +175,7 @@ export const JoinRoomPage: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        <div style={{ color: '#fff', fontSize: '16px' }}>加载中...</div>
+        <div style={{ color: '#fff', fontSize: '16px' }}>正在验证邀请信息...</div>
       </div>
     );
   }
@@ -162,7 +212,7 @@ export const JoinRoomPage: React.FC = () => {
           fontSize: '14px',
           textAlign: 'center',
         }}>
-          请填写以下信息以加入面试房间
+          {invitation ? '邀请信息已自动填写，确认后即可加入' : '请填写以下信息以加入面试房间'}
         </p>
 
         {roomInfo && (
@@ -198,19 +248,9 @@ export const JoinRoomPage: React.FC = () => {
               value={candidateName}
               onChange={e => setCandidateName(e.target.value)}
               placeholder="请输入您的姓名"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '4px',
-                border: '1px solid #444',
-                background: '#2a2a2a',
-                color: '#fff',
-                fontSize: '14px',
-                boxSizing: 'border-box',
-                outline: 'none',
-              }}
-              onFocus={e => e.target.style.borderColor = '#2196f3'}
-              onBlur={e => e.target.style.borderColor = '#444'}
+              style={inputStyle}
+              onFocus={e => !e.target.readOnly && (e.target.style.borderColor = '#2196f3')}
+              onBlur={e => (e.target.style.borderColor = '#444')}
             />
           </div>
 
@@ -228,48 +268,24 @@ export const JoinRoomPage: React.FC = () => {
               value={candidateEmail}
               onChange={e => setCandidateEmail(e.target.value)}
               placeholder="请输入您的邮箱"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '4px',
-                border: '1px solid #444',
-                background: '#2a2a2a',
-                color: '#fff',
-                fontSize: '14px',
-                boxSizing: 'border-box',
-                outline: 'none',
-              }}
-              onFocus={e => e.target.style.borderColor = '#2196f3'}
-              onBlur={e => e.target.style.borderColor = '#444'}
+              style={inputStyle}
+              onFocus={e => !e.target.readOnly && (e.target.style.borderColor = '#2196f3')}
+              onBlur={e => (e.target.style.borderColor = '#444')}
             />
           </div>
 
-          {tokenFromUrl ? (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{
-                display: 'block',
-                color: '#ccc',
-                marginBottom: '6px',
-                fontSize: '14px',
-              }}>
-                邀请Token
-              </label>
-              <input
-                type="text"
-                value={tokenFromUrl}
-                readOnly
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '4px',
-                  border: '1px solid #444',
-                  background: '#252525',
-                  color: '#888',
-                  fontSize: '14px',
-                  boxSizing: 'border-box',
-                  cursor: 'not-allowed',
-                }}
-              />
+          {invitation ? (
+            <div style={{
+              marginBottom: '16px',
+              padding: '10px 12px',
+              borderRadius: '4px',
+              background: '#252525',
+              border: '1px solid #333',
+              color: '#888',
+              fontSize: '12px',
+              wordBreak: 'break-all',
+            }}>
+              {tokenError ? '邀请链接无效' : '✓ 您正在通过专属邀请链接加入'}
             </div>
           ) : (
             <div style={{ marginBottom: '16px' }}>
@@ -287,22 +303,9 @@ export const JoinRoomPage: React.FC = () => {
                 onChange={handleRoomCodeChange}
                 placeholder="请输入6位房间码"
                 maxLength={6}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '4px',
-                  border: '1px solid #444',
-                  background: '#2a2a2a',
-                  color: '#fff',
-                  fontSize: '18px',
-                  letterSpacing: '4px',
-                  textAlign: 'center',
-                  boxSizing: 'border-box',
-                  outline: 'none',
-                  textTransform: 'uppercase',
-                }}
-                onFocus={e => e.target.style.borderColor = '#2196f3'}
-                onBlur={e => e.target.style.borderColor = '#444'}
+                style={{ ...inputStyle, fontSize: '18px', letterSpacing: '4px', textAlign: 'center', textTransform: 'uppercase' }}
+                onFocus={e => (e.target.style.borderColor = '#2196f3')}
+                onBlur={e => (e.target.style.borderColor = '#444')}
               />
             </div>
           )}
@@ -323,7 +326,7 @@ export const JoinRoomPage: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading || !roomInfo}
+            disabled={loading || !canSubmit}
             style={{
               width: '100%',
               padding: '12px 24px',
@@ -331,10 +334,10 @@ export const JoinRoomPage: React.FC = () => {
               border: 'none',
               background: '#2196f3',
               color: '#fff',
-              cursor: loading || !roomInfo ? 'not-allowed' : 'pointer',
+              cursor: loading || !canSubmit ? 'not-allowed' : 'pointer',
               fontSize: '16px',
               fontWeight: 500,
-              opacity: loading || !roomInfo ? 0.6 : 1,
+              opacity: loading || !canSubmit ? 0.6 : 1,
               transition: 'opacity 0.2s',
             }}
           >
@@ -342,7 +345,7 @@ export const JoinRoomPage: React.FC = () => {
           </button>
         </form>
 
-        {!tokenFromUrl && (
+        {!invitation && (
           <p style={{
             color: '#666',
             margin: '16px 0 0 0',

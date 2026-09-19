@@ -6,9 +6,10 @@ import { CreateRoomModal } from './CreateRoomModal';
 import { InvitePanel } from './InvitePanel';
 import ParticipantList from './ParticipantList';
 import { useInterviewStore, StatusChangeNotification } from '../store/interview';
-import { ParticipantStatus, getRoomStatusConfig, formatDuration, formatTime } from '../types';
+import { ParticipantStatus, CandidateInvitation, getRoomStatusConfig, formatDuration, formatTime } from '../types';
 import { getRoomById, updateRoomStatus, getRoomParticipants, heartbeat } from '../services/interviewRoomService';
-import { connect, disconnect, subscribeParticipants, subscribeRoomStatus, sendHeartbeat } from '../services/websocketService';
+import { getInvitationsByRoom } from '../services/invitationService';
+import { connect, disconnect, subscribeParticipants, subscribeRoomStatus, subscribeInvitations, sendHeartbeat } from '../services/websocketService';
 import { getProblemById } from '../services/problemService';
 
 export const InterviewerRoomView: React.FC = () => {
@@ -21,6 +22,7 @@ export const InterviewerRoomView: React.FC = () => {
     setCurrentRoom,
     setParticipants,
     updateParticipant,
+    setInvitations,
     setIsConnected,
     resetRoom,
     setProblem,
@@ -36,6 +38,7 @@ export const InterviewerRoomView: React.FC = () => {
   const wsHeartbeatRef = useRef<number | null>(null);
   const unsubscribeParticipantsRef = useRef<(() => void) | null>(null);
   const unsubscribeRoomStatusRef = useRef<(() => void) | null>(null);
+  const unsubscribeInvitationsRef = useRef<(() => void) | null>(null);
   const durationTimerRef = useRef<number | null>(null);
   const notificationTimerRef = useRef<number | null>(null);
 
@@ -84,6 +87,15 @@ export const InterviewerRoomView: React.FC = () => {
         }
         await fetchParticipants();
 
+        if (roomId) {
+          try {
+            const invitationList = await getInvitationsByRoom(roomId);
+            if (mounted) setInvitations(invitationList);
+          } catch (error) {
+            console.error('Failed to fetch invitations:', error);
+          }
+        }
+
         if (currentUser && roomId) {
           try {
             await connect(roomId, currentUser);
@@ -98,6 +110,12 @@ export const InterviewerRoomView: React.FC = () => {
             unsubscribeRoomStatusRef.current = subscribeRoomStatus(roomId, (room) => {
               if (mounted) {
                 setCurrentRoom(room);
+              }
+            });
+
+            unsubscribeInvitationsRef.current = subscribeInvitations(roomId, (data) => {
+              if (mounted) {
+                setInvitations(data as CandidateInvitation[]);
               }
             });
 
@@ -126,10 +144,11 @@ export const InterviewerRoomView: React.FC = () => {
       if (wsHeartbeatRef.current) clearInterval(wsHeartbeatRef.current);
       if (unsubscribeParticipantsRef.current) unsubscribeParticipantsRef.current();
       if (unsubscribeRoomStatusRef.current) unsubscribeRoomStatusRef.current();
+      if (unsubscribeInvitationsRef.current) unsubscribeInvitationsRef.current();
       disconnect();
       setIsConnected(false);
     };
-  }, [roomId, currentUser, currentRoom, fetchRoomDetails, fetchParticipants, sendHttpHeartbeat, setIsConnected, setCurrentRoom, setParticipants]);
+  }, [roomId, currentUser, currentRoom, fetchRoomDetails, fetchParticipants, sendHttpHeartbeat, setIsConnected, setCurrentRoom, setParticipants, setInvitations]);
 
   const updateDuration = useCallback(() => {
     if (!currentRoom) return;

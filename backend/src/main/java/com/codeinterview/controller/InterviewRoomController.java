@@ -1,5 +1,6 @@
 package com.codeinterview.controller;
 
+import com.codeinterview.config.ApiException;
 import com.codeinterview.dto.CreateRoomResponse;
 import com.codeinterview.dto.JoinRoomResponse;
 import com.codeinterview.dto.WebSocketMessage;
@@ -128,42 +129,80 @@ public class InterviewRoomController {
         String candidateName = request.get("candidateName");
         String inviteToken = request.get("inviteToken");
 
+        if (candidateName == null || candidateName.trim().isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "候选人姓名不能为空");
+        }
+
         Optional<InterviewRoom> roomOpt = interviewRoomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            throw new ApiException(HttpStatus.NOT_FOUND, "房间不存在");
         }
         InterviewRoom room = roomOpt.get();
 
+        if ("COMPLETED".equals(room.getStatus()) || "CANCELLED".equals(room.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "面试房间已"
+                    + ("CANCELLED".equals(room.getStatus()) ? "取消" : "结束") + "，无法加入");
+        }
+
         String message = "Joined via room code";
+        CandidateInvitation invitation = null;
 
         if (inviteToken != null && !inviteToken.trim().isEmpty()) {
-            Optional<CandidateInvitation> invitationOpt = candidateInvitationRepository.findByInviteToken(inviteToken);
+            Optional<CandidateInvitation> invitationOpt = candidateInvitationRepository.findByInviteToken(inviteToken.trim());
             if (invitationOpt.isEmpty()) {
-                return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "邀请链接无效或不存在");
             }
 
-            CandidateInvitation invitation = invitationOpt.get();
+            invitation = invitationOpt.get();
             if (!invitation.getRoomId().equals(roomId)) {
-                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                throw new ApiException(HttpStatus.BAD_REQUEST, "邀请链接与房间不匹配");
+            }
+            if ("REVOKED".equals(invitation.getStatus())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "邀请已被撤销，请联系面试官重新发送");
             }
 
-            invitation.setStatus("JOINED");
-            invitation.setJoinedAt(LocalDateTime.now());
-            candidateInvitationRepository.save(invitation);
+            // 已加入过的候选人刷新页面后重入：复用原有参会身份，保持幂等
+            if ("JOINED".equals(invitation.getStatus()) && invitation.getParticipantId() != null) {
+                Optional<ParticipantStatus> existing =
+                        participantStatusRepository.findByRoomIdAndUserId(roomId, invitation.getParticipantId());
+                if (existing.isPresent()) {
+                    ParticipantStatus status = existing.get();
+                    status.setOnline(true);
+                    status.setLastHeartbeat(LocalDateTime.now());
+                    participantStatusRepository.save(status);
+
+                    List<ParticipantStatus> participants = participantStatusRepository.findByRoomId(roomId);
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId + "/participants",
+                            new WebSocketMessage<>("PARTICIPANTS_UPDATE", participants));
+
+                    return new ResponseEntity<>(new JoinRoomResponse(status, room, "Rejoined via invitation token"), HttpStatus.OK);
+                }
+            }
             message = "Joined via invitation token";
         }
 
         ParticipantStatus candidateStatus = new ParticipantStatus();
+        String participantId = java.util.UUID.randomUUID().toString();
+        candidateStatus.setId(participantId);
+        candidateStatus.setUserId(participantId);
         candidateStatus.setRoomId(roomId);
-        candidateStatus.setUserName(candidateName);
+        candidateStatus.setUserName(candidateName.trim());
         candidateStatus.setUserRole("CANDIDATE");
         candidateStatus.setOnline(true);
         candidateStatus.setLastHeartbeat(LocalDateTime.now());
         candidateStatus.setJoinedAt(LocalDateTime.now());
         ParticipantStatus savedStatus = participantStatusRepository.save(candidateStatus);
 
-        savedStatus.setUserId(savedStatus.getId());
-        participantStatusRepository.save(savedStatus);
+        if (invitation != null) {
+            invitation.setStatus("JOINED");
+            invitation.setJoinedAt(LocalDateTime.now());
+            invitation.setParticipantId(savedStatus.getUserId());
+            candidateInvitationRepository.save(invitation);
+
+            messagingTemplate.convertAndSend("/topic/room/" + roomId + "/invitations",
+                    new WebSocketMessage<>("INVITATIONS_UPDATE",
+                            candidateInvitationRepository.findByRoomIdOrderByCreatedAtDesc(roomId)));
+        }
 
         List<ParticipantStatus> participants = participantStatusRepository.findByRoomId(roomId);
         messagingTemplate.convertAndSend("/topic/room/" + roomId + "/participants",

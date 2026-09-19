@@ -1,4 +1,5 @@
 import type { InterviewRoom, ParticipantStatus, CreateRoomRequest, CreateRoomResponse, JoinRoomResponse } from '../types';
+import { mockMarkInvitationJoinedByToken } from './mockInvitationService';
 
 const STORAGE_KEY = 'code_interview_rooms';
 
@@ -201,6 +202,10 @@ export async function mockJoinRoom(roomId: string, data: { candidateName: string
   roomsCache = [...rooms];
   roomsCache[index] = updatedRoom;
   saveToStorage(roomsCache);
+
+  if (data.inviteToken) {
+    mockMarkInvitationJoinedByToken(data.inviteToken, candidateId);
+  }
 
   return {
     participant: { ...participant },
