@@ -42,6 +42,7 @@ export const JoinRoomPage: React.FC = () => {
       const room = await getRoomById(invitation.roomId);
       setRoomInfo(room);
     } catch (err) {
+      setRoomInfo(null);
       setError(err instanceof Error ? err.message : '获取邀请信息失败');
     } finally {
       setInitialLoading(false);
@@ -246,30 +247,22 @@ export const JoinRoomPage: React.FC = () => {
 
           {tokenFromUrl ? (
             <div style={{ marginBottom: '16px' }}>
-              <label style={{
-                display: 'block',
-                color: '#ccc',
-                marginBottom: '6px',
-                fontSize: '14px',
+              <div style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '4px',
+                border: '1px solid rgba(76, 175, 80, 0.3)',
+                background: 'rgba(76, 175, 80, 0.08)',
+                color: '#4caf50',
+                fontSize: '13px',
+                boxSizing: 'border-box',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
               }}>
-                邀请Token
-              </label>
-              <input
-                type="text"
-                value={tokenFromUrl}
-                readOnly
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '4px',
-                  border: '1px solid #444',
-                  background: '#252525',
-                  color: '#888',
-                  fontSize: '14px',
-                  boxSizing: 'border-box',
-                  cursor: 'not-allowed',
-                }}
-              />
+                <span>✓</span>
+                <span>您正在通过专属邀请链接加入，身份信息已为您自动填写</span>
+              </div>
             </div>
           ) : (
             <div style={{ marginBottom: '16px' }}>
@@ -317,7 +310,25 @@ export const JoinRoomPage: React.FC = () => {
               borderRadius: '4px',
               border: '1px solid rgba(244,67,54,0.3)',
             }}>
-              {error}
+              <div>{error}</div>
+              {tokenFromUrl && !roomInfo && (
+                <button
+                  type="button"
+                  onClick={() => { setTokenFromUrl(''); setError(''); setRoomInfo(null); }}
+                  style={{
+                    marginTop: '8px',
+                    padding: '4px 12px',
+                    background: 'transparent',
+                    color: '#2196f3',
+                    border: '1px solid #2196f3',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                  }}
+                >
+                  改用房间码加入
+                </button>
+              )}
             </div>
           )}
 

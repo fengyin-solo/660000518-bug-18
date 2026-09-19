@@ -57,15 +57,20 @@ export interface User {
   createdAt: string;
 }
 
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT' | 'REVOKED';
+
 export interface CandidateInvitation {
   id: string;
   roomId: string;
   candidateName: string;
   candidateEmail: string;
   inviteToken: string;
-  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT';
+  status: InvitationStatus;
   joinedAt?: string;
+  revokedAt?: string;
   createdAt: string;
+  /** 创建/重复发送接口返回的可直接打开的邀请链接（相对路径 /join?token=xxx） */
+  inviteLink?: string;
 }
 
 export interface ParticipantStatus {
@@ -117,6 +122,32 @@ export interface InviteCandidateRequest {
   candidateName: string;
   candidateEmail: string;
 }
+
+export interface InviteCandidateResponse extends CandidateInvitation {
+  /** true = 已存在 PENDING 邀请，本次是重复发送，沿用原凭证与链接 */
+  resent: boolean;
+}
+
+export interface InvitationStatusConfig {
+  value: InvitationStatus;
+  label: string;
+  color: string;
+  bgColor: string;
+}
+
+export const INVITATION_STATUS_CONFIGS: InvitationStatusConfig[] = [
+  { value: 'PENDING', label: '待接受', color: '#ff9800', bgColor: 'rgba(255, 152, 0, 0.15)' },
+  { value: 'ACCEPTED', label: '已接受', color: '#4caf50', bgColor: 'rgba(76, 175, 80, 0.15)' },
+  { value: 'JOINED', label: '已加入', color: '#2196f3', bgColor: 'rgba(33, 150, 243, 0.15)' },
+  { value: 'LEFT', label: '已离开', color: '#9e9e9e', bgColor: 'rgba(158, 158, 158, 0.15)' },
+  { value: 'DECLINED', label: '已拒绝', color: '#f44336', bgColor: 'rgba(244, 67, 54, 0.15)' },
+  { value: 'REVOKED', label: '已撤销', color: '#9e9e9e', bgColor: 'rgba(158, 158, 158, 0.15)' },
+];
+
+export const getInvitationStatusConfig = (status: string): InvitationStatusConfig => {
+  return INVITATION_STATUS_CONFIGS.find((s) => s.value === status)
+    || { value: 'PENDING', label: status, color: '#666', bgColor: 'rgba(102,102,102,0.15)' };
+};
 
 export interface CreateRoomResponse {
   room: InterviewRoom;

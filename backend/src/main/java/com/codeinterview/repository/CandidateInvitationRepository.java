@@ -11,4 +11,5 @@ import java.util.Optional;
 public interface CandidateInvitationRepository extends JpaRepository<CandidateInvitation, String> {
     List<CandidateInvitation> findByRoomIdOrderByCreatedAtDesc(String roomId);
     Optional<CandidateInvitation> findByInviteToken(String inviteToken);
+    Optional<CandidateInvitation> findFirstByRoomIdAndCandidateEmailIgnoreCaseOrderByCreatedAtDesc(String roomId, String candidateEmail);
 }

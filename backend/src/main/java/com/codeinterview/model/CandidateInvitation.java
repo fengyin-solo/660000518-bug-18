@@ -14,6 +14,7 @@ public class CandidateInvitation {
     private String inviteToken;
     private String status;
     private LocalDateTime joinedAt;
+    private LocalDateTime revokedAt;
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public String getId() { return id; }
@@ -30,6 +31,8 @@ public class CandidateInvitation {
     public void setStatus(String status) { this.status = status; }
     public LocalDateTime getJoinedAt() { return joinedAt; }
     public void setJoinedAt(LocalDateTime joinedAt) { this.joinedAt = joinedAt; }
+    public LocalDateTime getRevokedAt() { return revokedAt; }
+    public void setRevokedAt(LocalDateTime revokedAt) { this.revokedAt = revokedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

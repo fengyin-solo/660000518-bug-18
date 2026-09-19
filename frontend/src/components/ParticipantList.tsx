@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getRoomParticipants, updateRoomStatus, getRoomById, heartbeat } from '../services/interviewRoomService';
 import { subscribeParticipants, sendHeartbeat, connect, disconnect } from '../services/websocketService';
 import { useInterviewStore } from '../store/interview';
-import { ParticipantStatus, getRoomStatusConfig, formatTime } from '../types';
+import { ParticipantStatus, getRoomStatusConfig, getInvitationStatusConfig, formatTime } from '../types';
 
 const formatTimeAgo = (dateString: string): string => {
   const now = new Date().getTime();
@@ -539,12 +539,12 @@ const ParticipantList: React.FC<ParticipantListProps> = ({ roomId }) => {
                     <span>最后活跃: {formatTime(participant.lastHeartbeat)}</span>
                     {invitation && (
                       <span>
-                        邀请状态: 
+                        邀请状态:
                         <span style={{
-                          color: invitation.status === 'JOINED' ? '#4caf50' : '#ff9800',
+                          color: getInvitationStatusConfig(invitation.status).color,
                           marginLeft: '4px',
                         }}>
-                          {invitation.status === 'JOINED' ? '已加入' : invitation.status}
+                          {getInvitationStatusConfig(invitation.status).label}
                         </span>
                       </span>
                     )}

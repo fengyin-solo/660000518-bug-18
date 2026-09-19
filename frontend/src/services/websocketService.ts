@@ -1,6 +1,6 @@
 import SockJS from 'sockjs-client';
 import { Client, IMessage } from '@stomp/stompjs';
-import type { User, InterviewRoom, ParticipantStatus } from '../types';
+import type { User, InterviewRoom, ParticipantStatus, CandidateInvitation } from '../types';
 
 let stompClient: Client | null = null;
 
@@ -80,6 +80,30 @@ export function subscribeRoomStatus(
         callback(room as InterviewRoom);
       } catch (e) {
         console.error('Failed to parse room status message:', e);
+      }
+    }
+  );
+
+  return () => subscription.unsubscribe();
+}
+
+export function subscribeInvitations(
+  roomId: string,
+  callback: (invitations: CandidateInvitation[]) => void
+): () => void {
+  if (!stompClient) {
+    return () => {};
+  }
+
+  const subscription = stompClient.subscribe(
+    `/topic/room/${roomId}/invitations`,
+    (message: IMessage) => {
+      try {
+        const data = JSON.parse(message.body);
+        const invitations = data.payload || data;
+        callback(invitations as CandidateInvitation[]);
+      } catch (e) {
+        console.error('Failed to parse invitations message:', e);
       }
     }
   );

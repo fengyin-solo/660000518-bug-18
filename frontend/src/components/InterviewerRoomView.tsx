@@ -8,7 +8,7 @@ import ParticipantList from './ParticipantList';
 import { useInterviewStore, StatusChangeNotification } from '../store/interview';
 import { ParticipantStatus, getRoomStatusConfig, formatDuration, formatTime } from '../types';
 import { getRoomById, updateRoomStatus, getRoomParticipants, heartbeat } from '../services/interviewRoomService';
-import { connect, disconnect, subscribeParticipants, subscribeRoomStatus, sendHeartbeat } from '../services/websocketService';
+import { connect, disconnect, subscribeParticipants, subscribeRoomStatus, subscribeInvitations, sendHeartbeat } from '../services/websocketService';
 import { getProblemById } from '../services/problemService';
 
 export const InterviewerRoomView: React.FC = () => {
@@ -24,6 +24,7 @@ export const InterviewerRoomView: React.FC = () => {
     setIsConnected,
     resetRoom,
     setProblem,
+    setInvitations,
     statusChangeNotification,
     setStatusChangeNotification,
   } = useInterviewStore();
@@ -36,6 +37,7 @@ export const InterviewerRoomView: React.FC = () => {
   const wsHeartbeatRef = useRef<number | null>(null);
   const unsubscribeParticipantsRef = useRef<(() => void) | null>(null);
   const unsubscribeRoomStatusRef = useRef<(() => void) | null>(null);
+  const unsubscribeInvitationsRef = useRef<(() => void) | null>(null);
   const durationTimerRef = useRef<number | null>(null);
   const notificationTimerRef = useRef<number | null>(null);
 
@@ -101,6 +103,12 @@ export const InterviewerRoomView: React.FC = () => {
               }
             });
 
+            unsubscribeInvitationsRef.current = subscribeInvitations(roomId, (invitations) => {
+              if (mounted) {
+                setInvitations(invitations);
+              }
+            });
+
             httpHeartbeatRef.current = window.setInterval(sendHttpHeartbeat, 30000);
             wsHeartbeatRef.current = window.setInterval(() => {
               if (currentUser) sendHeartbeat(roomId, currentUser);
@@ -126,6 +134,7 @@ export const InterviewerRoomView: React.FC = () => {
       if (wsHeartbeatRef.current) clearInterval(wsHeartbeatRef.current);
       if (unsubscribeParticipantsRef.current) unsubscribeParticipantsRef.current();
       if (unsubscribeRoomStatusRef.current) unsubscribeRoomStatusRef.current();
+      if (unsubscribeInvitationsRef.current) unsubscribeInvitationsRef.current();
       disconnect();
       setIsConnected(false);
     };

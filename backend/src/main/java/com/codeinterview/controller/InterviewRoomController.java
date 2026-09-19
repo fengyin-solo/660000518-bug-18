@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -124,38 +125,59 @@ public class InterviewRoomController {
 
     @PostMapping("/{roomId}/join")
     @Transactional
-    public ResponseEntity<JoinRoomResponse> joinRoom(@PathVariable String roomId, @RequestBody Map<String, String> request) {
+    public ResponseEntity<?> joinRoom(@PathVariable String roomId, @RequestBody Map<String, String> request) {
         String candidateName = request.get("candidateName");
         String inviteToken = request.get("inviteToken");
 
+        if (candidateName == null || candidateName.isBlank()) {
+            return errorResponse(HttpStatus.BAD_REQUEST, "请输入候选人姓名");
+        }
+
         Optional<InterviewRoom> roomOpt = interviewRoomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            return errorResponse(HttpStatus.NOT_FOUND, "房间不存在或已关闭");
         }
         InterviewRoom room = roomOpt.get();
+
+        if ("CANCELLED".equals(room.getStatus())) {
+            return errorResponse(HttpStatus.BAD_REQUEST, "房间已取消，无法加入");
+        }
 
         String message = "Joined via room code";
 
         if (inviteToken != null && !inviteToken.trim().isEmpty()) {
             Optional<CandidateInvitation> invitationOpt = candidateInvitationRepository.findByInviteToken(inviteToken);
             if (invitationOpt.isEmpty()) {
-                return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+                return errorResponse(HttpStatus.UNAUTHORIZED, "无效的邀请链接");
             }
 
             CandidateInvitation invitation = invitationOpt.get();
             if (!invitation.getRoomId().equals(roomId)) {
-                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                return errorResponse(HttpStatus.BAD_REQUEST, "邀请链接与房间不匹配");
+            }
+            if ("REVOKED".equals(invitation.getStatus())) {
+                return errorResponse(HttpStatus.BAD_REQUEST, "邀请已被撤销，请联系面试官重新发送");
+            }
+            if ("DECLINED".equals(invitation.getStatus())) {
+                return errorResponse(HttpStatus.BAD_REQUEST, "邀请已被拒绝");
+            }
+            if ("JOINED".equals(invitation.getStatus())) {
+                return errorResponse(HttpStatus.BAD_REQUEST, "该邀请已被使用，不能重复加入");
             }
 
             invitation.setStatus("JOINED");
             invitation.setJoinedAt(LocalDateTime.now());
             candidateInvitationRepository.save(invitation);
             message = "Joined via invitation token";
+
+            messagingTemplate.convertAndSend("/topic/room/" + roomId + "/invitations",
+                    new WebSocketMessage<>("INVITATIONS_UPDATE",
+                            candidateInvitationRepository.findByRoomIdOrderByCreatedAtDesc(roomId)));
         }
 
         ParticipantStatus candidateStatus = new ParticipantStatus();
         candidateStatus.setRoomId(roomId);
-        candidateStatus.setUserName(candidateName);
+        candidateStatus.setUserName(candidateName.trim());
         candidateStatus.setUserRole("CANDIDATE");
         candidateStatus.setOnline(true);
         candidateStatus.setLastHeartbeat(LocalDateTime.now());
@@ -171,6 +193,15 @@ public class InterviewRoomController {
 
         JoinRoomResponse response = new JoinRoomResponse(savedStatus, room, message);
         return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    private ResponseEntity<Map<String, Object>> errorResponse(HttpStatus status, String message) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("success", false);
+        body.put("status", status.value());
+        body.put("message", message);
+        body.put("timestamp", LocalDateTime.now().toString());
+        return new ResponseEntity<>(body, status);
     }
 
     @PostMapping("/{roomId}/leave")
